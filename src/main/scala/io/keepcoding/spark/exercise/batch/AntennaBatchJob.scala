@@ -92,7 +92,7 @@ object AntennaBatchJob extends BatchJob {
   def main(args: Array[String]): Unit = {
     val storage = "/Users/abueno"
 
-    val jdbcUri = "jdbc:postgresql://34.173.106.255:5432/postgres"
+    val jdbcUri = "jdbc:postgresql://34.125.140.105:5432/postgres"
     val jdbcUser = "postgres"
     val jdbcPassword = "keepcoding"
 

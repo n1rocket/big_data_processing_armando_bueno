@@ -22,6 +22,7 @@ object DeviceStreamingJob extends StreamingJob {
       .readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", kafkaServer)
+      .option("failOnDataLoss", "false")
       .option("subscribe", topic)
       .load()
   }
@@ -69,7 +70,7 @@ object DeviceStreamingJob extends StreamingJob {
       .agg(
         sum($"bytes").as("total_bytes"),
       )
-      .select($"window.start".as("timestamp"), $"antenna_id", $"total_bytes".as("value"), lit("antenna_bytes_total"))
+      .select($"window.start".as("timestamp"), $"antenna_id".as("id"), $"total_bytes".as("value"), lit("antenna_bytes_total").as("type"))
   }
 
   override def computeBytesByUser(dataFrame: DataFrame): DataFrame = {
@@ -80,7 +81,7 @@ object DeviceStreamingJob extends StreamingJob {
       .agg(
         sum($"bytes").as("total_bytes"),
       )
-      .select($"window.start".as("timestamp"), $"id", $"total_bytes".as("value"), lit("user_bytes_total"))
+      .select($"window.start".as("timestamp"), $"id".as("id"), $"total_bytes".as("value"), lit("user_bytes_total").as("type"))
 
   }
 
@@ -92,7 +93,7 @@ object DeviceStreamingJob extends StreamingJob {
       .agg(
         sum($"bytes").as("total_bytes"),
       )
-      .select($"window.start".as("timestamp"), $"app", $"total_bytes".as("value"), lit("app_bytes_total"))
+      .select($"window.start".as("timestamp"), $"app".as("id"), $"total_bytes".as("value"),  lit("app_bytes_total").as("type"))
 
   }
 
@@ -139,20 +140,12 @@ object DeviceStreamingJob extends StreamingJob {
       .awaitTermination()
   }
 
-  def computeAggs(enrichedDF: DataFrame): DataFrame = {
-    val aggBytesByAntennaDF = computeBytesByAntenna(enrichedDF)
-    val aggBytesByUserDF = computeBytesByUser(enrichedDF)
-    val aggBytesByAppDF = computeBytesByApp(enrichedDF)
-
-    aggBytesByAppDF.union(aggBytesByUserDF).union(aggBytesByAntennaDF)
-  }
-
   def main(args: Array[String]): Unit = {
     //    val Array(kafkaServer, topic, jdbcUri, jdbcMetadataTable, aggJdbcTable, jdbcUser, jdbcPassword, storagePath) = args
     //run(args)
 
     val storage = "/Users/abueno"
-    val ipKafka = "34.125.50.56:9092"
+    val ipKafka = "34.125.140.105:9092"
     val jdbcUri = s"jdbc:postgresql://34.173.106.255:5432/postgres"
     val jdbcUser = "postgres"
     val jdbcPassword = "keepcoding"
@@ -163,17 +156,21 @@ object DeviceStreamingJob extends StreamingJob {
     val metadataDF = readDevicesMetadata(jdbcUri, "user_metadata", jdbcUser, jdbcPassword)
     val enrichedDF = enrichDeviceWithMetadata(devicesDF, metadataDF)
 
-    val aggs = computeAggs(enrichedDF)
+    val aggBytesByAntennaDF = computeBytesByAntenna(enrichedDF)
+    val aggBytesByUserDF = computeBytesByUser(enrichedDF)
+    val aggBytesByAppDF = computeBytesByApp(enrichedDF)
 
-    //val jdbcFuture = writeToJdbc(aggs, jdbcUri, "bytes", jdbcUser, jdbcPassword)
+    val antennaJdbcFuture = writeToJdbc(aggBytesByAntennaDF, jdbcUri, "bytes", jdbcUser, jdbcPassword)
+    val userJdbcFuture = writeToJdbc(aggBytesByUserDF, jdbcUri, "bytes", jdbcUser, jdbcPassword)
+    val appJdbcFuture = writeToJdbc(aggBytesByAppDF, jdbcUri, "bytes", jdbcUser, jdbcPassword)
 
-    aggs
-      .writeStream
-      .format("console")
-      .start()
-      .awaitTermination()
+    Await.result(Future.sequence(Seq(storageFuture, antennaJdbcFuture, userJdbcFuture, appJdbcFuture)), Duration.Inf)
 
-    //Await.result(Future.sequence(Seq(storageFuture)), Duration.Inf)
+//    aggs
+//      .writeStream
+//      .format("console")
+//      .start()
+//      .awaitTermination()
 
     spark.close()
 
