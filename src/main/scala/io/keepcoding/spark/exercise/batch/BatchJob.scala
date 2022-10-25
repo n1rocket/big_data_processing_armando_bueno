@@ -16,34 +16,39 @@ trait BatchJob {
 
   def readFromStorage(storagePath: String, filterDate: OffsetDateTime): DataFrame
 
-  def readAntennaMetadata(jdbcURI: String, jdbcTable: String, user: String, password: String): DataFrame
+  def readDeviceMetadata(jdbcURI: String, jdbcTable: String, user: String, password: String): DataFrame
 
-  def enrichAntennaWithMetadata(antennaDF: DataFrame, metadataDF: DataFrame): DataFrame
+  def enrichDeviceWithMetadata(antennaDF: DataFrame, metadataDF: DataFrame): DataFrame
 
-  def computeDevicesCountByCoordinates(dataFrame: DataFrame): DataFrame
 
-  def computeErrorAntennaByModelAndVersion(dataFrame: DataFrame): DataFrame
+  def computeBytesByAntenna(dataFrame: DataFrame): DataFrame
 
-  def computePercentStatusByID(dataFrame: DataFrame): DataFrame
+  def computeBytesByUser(dataFrame: DataFrame): DataFrame
+
+  def computeBytesByApp(dataFrame: DataFrame): DataFrame
+
+  def computeUserOverQuota(dataFrame: DataFrame): DataFrame
 
   def writeToJdbc(dataFrame: DataFrame, jdbcURI: String, jdbcTable: String, user: String, password: String): Unit
 
   def writeToStorage(dataFrame: DataFrame, storageRootPath: String): Unit
 
   def run(args: Array[String]): Unit = {
-    val Array(filterDate, storagePath, jdbcUri, jdbcMetadataTable, aggJdbcTable, aggJdbcErrorTable, aggJdbcPercentTable, jdbcUser, jdbcPassword) = args
+    val Array(filterDate, storagePath, jdbcUri, jdbcMetadataTable, aggJdbcTable, aggJdbcQuotaTable, jdbcUser, jdbcPassword) = args
     println(s"Running with: ${args.toSeq}")
 
     val antennaDF = readFromStorage(storagePath, OffsetDateTime.parse(filterDate))
-    val metadataDF = readAntennaMetadata(jdbcUri, jdbcMetadataTable, jdbcUser, jdbcPassword)
-    val antennaMetadataDF = enrichAntennaWithMetadata(antennaDF, metadataDF).cache()
-    val aggByCoordinatesDF = computeDevicesCountByCoordinates(antennaMetadataDF)
-    val aggPercentStatusDF = computePercentStatusByID(antennaMetadataDF)
-    val aggErroAntennaDF = computeErrorAntennaByModelAndVersion(antennaMetadataDF)
+    val metadataDF = readDeviceMetadata(jdbcUri, jdbcMetadataTable, jdbcUser, jdbcPassword)
+    val enrichedDF = enrichDeviceWithMetadata(antennaDF, metadataDF).cache()
+    val aggByAntenna = computeBytesByAntenna(enrichedDF)
+    val aggByUser = computeBytesByUser(enrichedDF)
+    val aggByApp = computeBytesByApp(enrichedDF)
+    val aggByQuota = computeUserOverQuota(enrichedDF)
 
-    writeToJdbc(aggByCoordinatesDF, jdbcUri, aggJdbcTable, jdbcUser, jdbcPassword)
-    writeToJdbc(aggPercentStatusDF, jdbcUri, aggJdbcPercentTable, jdbcUser, jdbcPassword)
-    writeToJdbc(aggErroAntennaDF, jdbcUri, aggJdbcErrorTable, jdbcUser, jdbcPassword)
+    writeToJdbc(aggByAntenna, jdbcUri, aggJdbcTable, jdbcUser, jdbcPassword)
+    writeToJdbc(aggByUser, jdbcUri, aggJdbcTable, jdbcUser, jdbcPassword)
+    writeToJdbc(aggByApp, jdbcUri, aggJdbcTable, jdbcUser, jdbcPassword)
+    writeToJdbc(aggByQuota, jdbcUri, aggJdbcQuotaTable, jdbcUser, jdbcPassword)
 
     writeToStorage(antennaDF, storagePath)
 
